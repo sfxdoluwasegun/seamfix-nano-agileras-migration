@@ -3,6 +3,7 @@ package com.nano.ras.assessor;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
@@ -63,8 +64,9 @@ public class AssessorManager {
 		}
 		
 		log.info("Subscriber MSISDN for RAS assessment:" + subscriber.getMsisdn());
+		SubscriberAssessment subscriberAssessment = rasAssessmentDS.getSubscriberAssessmentBySubscriber(subscriber);
 
-		if(subscriber.getAssessment() == null)
+		if(subscriberAssessment == null)
 			performFreshAssessment(subscriber);
 		else
 			reAssessment(subscriber);
@@ -141,7 +143,7 @@ public class AssessorManager {
 		}
 
 		if (!eligible)
-			rasAssessmentDS.update(subscriberAssessment);
+			rasAssessmentDS.updateWithNewTransaction(subscriberAssessment);
 		
 		if (subscriberState == null)
 			rasAssessmentDS.createSubscriberHistory(subscriber.getMsisdn(), BigDecimal.ZERO);
@@ -162,24 +164,37 @@ public class AssessorManager {
 			SubscriberAssessment subscriberAssessment, BorrowableAmount borrowableAmount, 
 			List<SubscriberHistory> subscriberHistories){
 
+		boolean status = true;
 		subscriberAssessment = refreshSubscriberAssessment(subscriber, subscriberAssessment);
 		RasCriteria rasCriteria = borrowableAmount.getCriteria();
 
-		Map<String, Object> map = blacklistStatus(subscriberAssessment);
+		Map<String, Object> map = blacklistStatus(subscriberAssessment, status);
 		boolean blacklist = (boolean) map.get("eligible");
+		
+		if (!blacklist)
+			status = false;
 
-		map = tarrifPlan((SubscriberAssessment) map.get("subscriberAssessment"));
+		map = tarrifPlan((SubscriberAssessment) map.get("subscriberAssessment"), status);
 		boolean tarrifPlan = (boolean) map.get("eligible");
+		
+		if (!tarrifPlan)
+			status = false;
 
-		map = ageOnNetwork(subscriber, (SubscriberAssessment) map.get("subscriberAssessment"), rasCriteria, borrowableAmount, subscriberHistories);
+		map = ageOnNetwork(subscriber, (SubscriberAssessment) map.get("subscriberAssessment"), rasCriteria, borrowableAmount, subscriberHistories, status);
 		boolean ageOnNetwork = (boolean) map.get("eligible");
+		
+		if (!ageOnNetwork)
+			status = false;
 
 		map = numberOfTopupsForSpecifiedDuration((SubscriberAssessment) map.get("subscriberAssessment"), 
-				rasCriteria, borrowableAmount, subscriberHistories);
+				rasCriteria, borrowableAmount, subscriberHistories, status);
 		boolean numberOfTopUps = (boolean) map.get("eligible");
+		
+		if (!numberOfTopUps)
+			status = false;
 
 		map = cumulativeTopupAmountForSpecifiedDuration((SubscriberAssessment) map.get("subscriberAssessment"), 
-				borrowableAmount, rasCriteria, subscriberHistories);
+				borrowableAmount, rasCriteria, subscriberHistories, status);
 		boolean topUpAmount = (boolean) map.get("eligible");
 
 		if (blacklist 
@@ -187,7 +202,7 @@ public class AssessorManager {
 				&& ageOnNetwork
 				&& numberOfTopUps
 				&& topUpAmount){
-			rasAssessmentDS.update((SubscriberAssessment) map.get("subscriberAssessment"));
+			rasAssessmentDS.updateWithNewTransaction((SubscriberAssessment) map.get("subscriberAssessment"));
 			return initializeResponse(true, subscriberAssessment);
 		}
 
@@ -210,15 +225,14 @@ public class AssessorManager {
 		if (activation != null){
 			daysOnNetwork = TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - activation.getTime());
 		}else{
-			Timestamp timestamp = rasAssessmentDS.getLatestSubscriberHistoryTimeBySubscriber(subscriber);
+			Timestamp timestamp = rasAssessmentDS.getEarliestSubscriberHistoryTimeBySubscriber(subscriber);
 			daysOnNetwork = TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - timestamp.getTime());
 		}
 
-		log.debug("daysOnNetwork:" + daysOnNetwork);
+		log.warn("daysOnNetwork:" + daysOnNetwork);
 
-		subscriberAssessment.setAgeOnNetwork(subscriberAssessment.getAgeOnNetwork() + daysOnNetwork.intValue());
+		subscriberAssessment.setAgeOnNetwork(daysOnNetwork.intValue());
 		subscriberAssessment.setNumberOfTopUps(0);
-		subscriberAssessment.setAssessmentInitTime(Timestamp.valueOf(LocalDateTime.now()));
 		subscriberAssessment.setTotalTopUpValue(0);
 
 		return subscriberAssessment;
@@ -231,21 +245,24 @@ public class AssessorManager {
 	 * @param borrowableAmount
 	 * @param rasCriteria
 	 * @param subscriberHistories
+	 * @param status
 	 * @return true if {@link Subscriber} re-charge value satisfies minimum top-up value requirement
 	 */
 	private Map<String, Object> cumulativeTopupAmountForSpecifiedDuration(SubscriberAssessment subscriberAssessment, 
 			BorrowableAmount borrowableAmount, RasCriteria rasCriteria, 
-			List<SubscriberHistory> subscriberHistories){
+			List<SubscriberHistory> subscriberHistories, boolean status){
 
 		for (SubscriberHistory subscriberHistory : subscriberHistories) {
-			Long days = getDays(subscriberHistory.getRechargeTime(), subscriberAssessment);
+			Long days = getDays(subscriberHistory.getRechargeTime());
 			if(days <= rasCriteria.getMinTopUpsDuration())
 				subscriberAssessment.setTotalTopUpValue(subscriberAssessment.getTotalTopUpValue() + (subscriberHistory.getRechargeForPrepaid().multiply(new BigDecimal("100.00")).intValue()));
 		}
 
 		if(subscriberAssessment.getTotalTopUpValue() >= rasCriteria.getMinTopUpValue()){
-			subscriberAssessment.setSmsMessage(null);
-			subscriberAssessment.setMaxBorrowableAmount(borrowableAmount);
+			if (status){
+				subscriberAssessment.setSmsMessage(null);
+				subscriberAssessment.setMaxBorrowableAmount(borrowableAmount);
+			}
 			return initializeResponse(true, subscriberAssessment);
 		}
 
@@ -268,21 +285,24 @@ public class AssessorManager {
 	 * @param rasCriteria
 	 * @param borrowableAmount
 	 * @param subscriberHistories
+	 * @param status
 	 * @return true if {@link Subscriber} satisfies minimum number of top-ups requirement
 	 */
 	private Map<String, Object> numberOfTopupsForSpecifiedDuration(SubscriberAssessment subscriberAssessment, 
 			RasCriteria rasCriteria, BorrowableAmount borrowableAmount, 
-			List<SubscriberHistory> subscriberHistories){
+			List<SubscriberHistory> subscriberHistories, boolean status){
 
 		for (SubscriberHistory subscriberHistory : subscriberHistories) {
-			Long days = getDays(subscriberHistory.getRechargeTime(), subscriberAssessment);
+			Long days = getDays(subscriberHistory.getRechargeTime());
 			if(days <= rasCriteria.getMinTopUpsDuration()) // gets top ups that happened with the specified days limit
 				subscriberAssessment.setNumberOfTopUps(subscriberAssessment.getNumberOfTopUps() + 1);
 		}
 
 		if(subscriberAssessment.getNumberOfTopUps() >= rasCriteria.getMinTopUps()){
-			subscriberAssessment.setSmsMessage(null);
-			subscriberAssessment.setMaxBorrowableAmount(borrowableAmount);
+			if (status){
+				subscriberAssessment.setSmsMessage(null);
+				subscriberAssessment.setMaxBorrowableAmount(borrowableAmount);
+			}
 			return initializeResponse(true, subscriberAssessment);
 		}
 
@@ -306,16 +326,19 @@ public class AssessorManager {
 	 * @param rasCriteria
 	 * @param borrowableAmount
 	 * @param subscriberHistories
+	 * @param status
 	 * @return true if {@link Subscriber} satisfies age on network requirement
 	 */
 	private Map<String, Object> ageOnNetwork(Subscriber subscriber, 
 			SubscriberAssessment subscriberAssessment, 
 			RasCriteria rasCriteria, BorrowableAmount borrowableAmount, 
-			List<SubscriberHistory> subscriberHistories){
+			List<SubscriberHistory> subscriberHistories, boolean status){
 
 		if(subscriberAssessment.getAgeOnNetwork() >= rasCriteria.getMinAgeOnNetwork()){
-			subscriberAssessment.setMaxBorrowableAmount(borrowableAmount);
-			subscriberAssessment.setSmsMessage(null);
+			if (status){
+				subscriberAssessment.setMaxBorrowableAmount(borrowableAmount);
+				subscriberAssessment.setSmsMessage(null);
+			}
 			return initializeResponse(true, subscriberAssessment);
 		}
 
@@ -334,9 +357,11 @@ public class AssessorManager {
 	 * Confirm {@link Subscriber} blacklist status on the network.
 	 * 
 	 * @param subscriberAssessment
+	 * @param status
 	 * @return true if {@link Subscriber} is not black listed
 	 */
-	private Map<String, Object> blacklistStatus(SubscriberAssessment subscriberAssessment){
+	private Map<String, Object> blacklistStatus(SubscriberAssessment subscriberAssessment, 
+			boolean status){
 
 		return initializeResponse(true, subscriberAssessment);
 	}
@@ -345,9 +370,11 @@ public class AssessorManager {
 	 * Confirm {@link Subscriber} tarrifPlan conforms to expected criteria.
 	 * 
 	 * @param subscriberAssessment
+	 * @param status
 	 * @return true if {@link Subscriber} tariff plan satisfies criteria requirement
 	 */
-	private Map<String, Object> tarrifPlan(SubscriberAssessment subscriberAssessment){
+	private Map<String, Object> tarrifPlan(SubscriberAssessment subscriberAssessment, 
+			boolean status){
 
 		return initializeResponse(true, subscriberAssessment);
 	}
@@ -381,16 +408,14 @@ public class AssessorManager {
 	}
 
 	/**
-	 * Calculate number of days in a date range.
+	 * Calculate number of days between rechareTime day and today.
 	 * 
 	 * @param rechargeTime
-	 * @param subscriberAssessment
 	 * @return long
 	 */
-	protected Long getDays(Timestamp rechargeTime, 
-			SubscriberAssessment subscriberAssessment){
+	protected Long getDays(Timestamp rechargeTime){
 
-		return ChronoUnit.DAYS.between(new Date(rechargeTime.getTime()).toLocalDate(), new Date(subscriberAssessment.getAssessmentInitTime().getTime()).toLocalDate());
+		return ChronoUnit.DAYS.between(new Date(rechargeTime.getTime()).toLocalDate(), LocalDate.now());
 		//return TimeUnit.MILLISECONDS.toDays(rechargeTime.getTime() - subscriberAssessment.getAssessmentInitTime().getTime());
 	}
 
