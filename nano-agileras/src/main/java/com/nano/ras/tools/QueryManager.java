@@ -54,6 +54,54 @@ public class QueryManager {
 	}
 	
 	/**
+	 * Fetch earliest Time stamp from {@link SubscriberHistory} by {@link Subscriber} property.
+	 *
+	 * @param subscriber
+	 * @return {@link Timestamp}
+	 */
+	public Timestamp getEarliestSubscriberHistoryTimeBySubscriber(Subscriber subscriber){
+		
+		CriteriaQuery<Timestamp> criteriaQuery = criteriaBuilder.createQuery(Timestamp.class);
+		Root<SubscriberHistory> root = criteriaQuery.from(SubscriberHistory.class);
+		
+		criteriaQuery.select(criteriaBuilder.least(root.get(SubscriberHistory_.rechargeTime)));
+		criteriaQuery.where(criteriaBuilder.equal(root.get(SubscriberHistory_.msisdn), subscriber.getMsisdn()));
+		
+		try {
+			return entityManager.createQuery(criteriaQuery).getSingleResult();
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			log.error("No subscriberHistory instance found for msisdn:" + subscriber.getMsisdn());
+		}
+		
+		return null;
+	}
+	
+	/**
+	 * Fetch {@link SubscriberAssessment} by {@link Subscriber} property.
+	 * 
+	 * @param subscriber
+	 * @return {@link Subscriber}
+	 */
+	public SubscriberAssessment getSubscriberAssessmentBySubscriber(Subscriber subscriber){
+		
+		CriteriaQuery<SubscriberAssessment> criteriaQuery = criteriaBuilder.createQuery(SubscriberAssessment.class);
+		Root<SubscriberAssessment> root = criteriaQuery.from(SubscriberAssessment.class);
+		
+		criteriaQuery.select(root);
+		criteriaQuery.where(criteriaBuilder.equal(root.get(SubscriberAssessment_.subscriber), subscriber));
+		
+		try {
+			return entityManager.createQuery(criteriaQuery).getSingleResult();
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			log.error("No subscriberAssessment instance was found with subscriber:" + subscriber.getPk());;
+		}
+		
+		return null;
+	}
+	
+	/**
 	 * Fetch {@link BorrowableAmount} by amount property.
 	 * 
 	 * @param amount
@@ -361,6 +409,26 @@ public class QueryManager {
 	 * @return the managed instance that the state was merged to
 	 */
 	public <T> Object update(T entity){
+
+		entityManager.merge(entity);
+		try {
+			return entity;
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			log.error("", e);
+		}
+
+		return null;
+	}
+	
+	/**
+	 * Merge the state of the given entity into the current {@link PersistenceContext}.
+	 * 
+	 * @param entity
+	 * @return the managed instance that the state was merged to
+	 */
+	@TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
+	public <T> Object updateWithNewTransaction(T entity){
 
 		entityManager.merge(entity);
 		try {

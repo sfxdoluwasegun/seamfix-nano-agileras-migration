@@ -203,7 +203,7 @@
 		<dependency>
 			<groupId>com.nano.jpa</groupId>
 			<artifactId>nano-jpa</artifactId>
-			<version>0.1.4-SNAPSHOT</version>
+			<version>0.1.7-SNAPSHOT</version>
 		</dependency>
 
 	</dependencies>
