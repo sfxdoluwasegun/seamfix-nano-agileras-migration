@@ -12,7 +12,10 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import javax.annotation.PostConstruct;
+import javax.ejb.Asynchronous;
 import javax.ejb.Stateless;
+import javax.ejb.TransactionAttribute;
+import javax.ejb.TransactionAttributeType;
 import javax.inject.Inject;
 
 import org.jboss.logging.Logger;
@@ -55,6 +58,8 @@ public class AssessorManager {
 	 * 
 	 * @param msisdn
 	 */
+	@Asynchronous
+	@TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
 	public void initAssessment(String msisdn){
 
 		Subscriber subscriber = rasAssessmentDS.getSubscriberByMsisdn(msisdn);
