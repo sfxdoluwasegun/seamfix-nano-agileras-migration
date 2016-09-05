@@ -10,7 +10,7 @@ import org.jboss.logging.Logger;
 
 import com.nano.jpa.entity.Subscriber;
 import com.nano.jpa.entity.ras.SubscriberAssessment;
-import com.nano.ras.AssessmentManager;
+import com.nano.ras.Assessment;
 import com.nano.ras.tools.QueryManager;
 
 /**
@@ -29,7 +29,7 @@ public class AssessorManager {
 	private QueryManager rasAssessmentDS;
 	
 	@Inject
-	private AssessmentManager assessmentManager ;
+	private Assessment assessment ;
 
 	/**
 	 * Initialize assessment process.
@@ -50,9 +50,9 @@ public class AssessorManager {
 		SubscriberAssessment subscriberAssessment = rasAssessmentDS.getSubscriberAssessmentBySubscriber(subscriber);
 
 		if(subscriberAssessment == null)
-			assessmentManager.performFreshAssessment(subscriber);
+			assessment.performFreshAssessment(subscriber);
 		else
-			assessmentManager.reAssessment(subscriber);
+			assessment.reAssessment(subscriber);
 	}
 
 }

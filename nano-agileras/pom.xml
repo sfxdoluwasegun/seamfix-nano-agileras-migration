@@ -209,7 +209,7 @@
 		<dependency>
 			<groupId>com.nano</groupId>
 			<artifactId>ras-assessor</artifactId>
-			<version>0.0.1-SNAPSHOT</version>
+			<version>0.0.2-SNAPSHOT</version>
 		</dependency>
 	</dependencies>
 
