@@ -15,7 +15,7 @@
 
 	<groupId>com.nano</groupId>
 	<artifactId>nano-agileras</artifactId>
-	<version>1.0.1-SNAPSHOT</version>
+	<version>1.0.2-SNAPSHOT</version>
 	<packaging>war</packaging>
 	<name>WildFly Quickstarts: nano-agileras</name>
 	<description>A starter Java EE 7 webapp project for use on JBoss WildFly / WildFly, generated from the jboss-javaee6-webapp archetype</description>
@@ -203,7 +203,7 @@
 		<dependency>
 			<groupId>com.nano.jpa</groupId>
 			<artifactId>nano-jpa</artifactId>
-			<version>2.0.1-SNAPSHOT</version>
+			<version>2.0.4-SNAPSHOT</version>
 		</dependency>
 
 		<dependency>
